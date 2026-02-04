@@ -1,0 +1,42 @@
+[package]
+name = "nklave-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core signing logic and slashing protection rules for Nklave"
+
+[dependencies]
+# BLS cryptography
+blst = { workspace = true }
+
+# Hashing and crypto
+sha2 = { workspace = true }
+hex = { workspace = true }
+aes = { workspace = true }
+ctr = { workspace = true }
+scrypt = { workspace = true }
+pbkdf2 = { workspace = true }
+hmac = { workspace = true }
+uuid = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Metrics
+metrics = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "signing"
+harness = false

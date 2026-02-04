@@ -1,6 +1,8 @@
 # Nklave
 
-Nklave is a signing security layer for Ethereum validators. It sits between a validator client and its BLS keys, enforcing slashing-prevention rules inside a small, isolated signing component. The goal is simple: make slashable signing impossible by construction, even if the host or validator process is compromised.
+Nklave is a signing security layer for proof-of-stake validators across multiple blockchain networks. It sits between a validator client and its signing keys, enforcing slashing-prevention rules inside a small, isolated signing component. The goal is simple: make slashable signing impossible by construction, even if the host or validator process is compromised.
+
+**Supported chains**: Ethereum (primary), Cosmos/CometBFT, Polkadot, Tezos. See `docs/slashing-definitions.md` for chain-specific slashing conditions.
 
 This repository contains product, architecture, and operational documentation. It is intentionally independent of any prior notes or drafts.
 
@@ -31,7 +33,7 @@ Most stacks focus on who can sign. Nklave focuses on what should never be signed
    - Enforces slashing-prevention invariants.
    - Maintains minimal safety state.
 
-2. **Host Proxy (Signer API)**
+2. **Host Proxy (Signer Interface)**
    - Runs next to the validator client.
    - Exposes a standard remote-signer interface.
    - Translates requests to the enclave protocol.
@@ -51,6 +53,7 @@ Most stacks focus on who can sign. Nklave focuses on what should never be signed
 - Architecture: `docs/architecture.md`
 - Threat model: `docs/threat-model.md`
 - Signing protocol: `docs/protocol.md`
+- Slashing definitions: `docs/slashing-definitions.md`
 - Slashing policy: `docs/slashing-policy.md`
 - State integrity: `docs/state-integrity.md`
 - Deployment guide: `docs/deployment.md`
