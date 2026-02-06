@@ -18,8 +18,8 @@ path = "src/main.rs"
 
 [dependencies]
 # Internal crates
-nklave-core = { path = "../nklave-core" }
-nklave-storage = { path = "../nklave-storage" }
+nklave-core = { workspace = true }
+nklave-storage = { workspace = true }
 
 # CLI
 clap = { version = "4", features = ["derive", "env"] }

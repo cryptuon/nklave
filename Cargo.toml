@@ -22,11 +22,11 @@ categories = ["cryptography", "authentication"]
 
 [workspace.dependencies]
 # Internal crates
-nklave-core = { path = "crates/nklave-core" }
-nklave-api = { path = "crates/nklave-api" }
-nklave-storage = { path = "crates/nklave-storage" }
-nklave-cosmos = { path = "crates/nklave-cosmos" }
-nklave-cli = { path = "crates/nklave-cli" }
+nklave-core = { version = "0.1.0", path = "crates/nklave-core" }
+nklave-api = { version = "0.1.0", path = "crates/nklave-api" }
+nklave-storage = { version = "0.1.0", path = "crates/nklave-storage" }
+nklave-cosmos = { version = "0.1.0", path = "crates/nklave-cosmos" }
+nklave-cli = { version = "0.1.0", path = "crates/nklave-cli" }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
