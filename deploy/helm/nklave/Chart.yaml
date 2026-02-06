@@ -1,0 +1,19 @@
+apiVersion: v2
+name: nklave
+description: Nklave - A secure signing layer for PoS validators with slashing protection
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - ethereum
+  - cosmos
+  - validator
+  - signing
+  - slashing-protection
+  - security
+home: https://github.com/nklave/nklave
+sources:
+  - https://github.com/nklave/nklave
+maintainers:
+  - name: Nklave Team
+    email: team@nklave.io

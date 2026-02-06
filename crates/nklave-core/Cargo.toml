@@ -5,9 +5,20 @@ edition.workspace = true
 license.workspace = true
 description = "Core signing logic and slashing protection rules for Nklave"
 
+[features]
+default = []
+# AWS KMS key provider support
+aws-kms = ["dep:aws-config", "dep:aws-sdk-kms"]
+# HashiCorp Vault key provider support
+vault = []
+
 [dependencies]
-# BLS cryptography
+# BLS cryptography (Ethereum)
 blst = { workspace = true }
+
+# Ed25519 cryptography (Cosmos)
+ed25519-dalek = { workspace = true }
+rand = { workspace = true }
 
 # Hashing and crypto
 sha2 = { workspace = true }
@@ -32,6 +43,18 @@ tracing = { workspace = true }
 
 # Metrics
 metrics = { workspace = true }
+
+# Async runtime (for replication)
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# TLS for replication
+tokio-rustls = { workspace = true }
+rustls-pemfile = { workspace = true }
+
+# AWS KMS (optional)
+aws-config = { workspace = true, optional = true }
+aws-sdk-kms = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

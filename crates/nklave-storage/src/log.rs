@@ -170,6 +170,7 @@ mod tests {
             decision: PolicyDecision::Allow,
             signing_root: [0u8; 32],
             prev_state_hash: [0u8; 32],
+            signing_context: None,
         }
     }
 

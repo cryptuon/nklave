@@ -1,0 +1,47 @@
+# Example Prometheus configuration for Nklave monitoring
+#
+# This is a reference configuration. Adapt for your environment.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Alertmanager configuration (optional)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - alertmanager:9093
+
+# Rule files to load
+rule_files:
+  - "alerts.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Nklave signing service
+  - job_name: 'nklave'
+    static_configs:
+      - targets: ['localhost:9001']  # Default metrics port
+    # Optional: relabel to add environment label
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: environment
+        replacement: production
+
+  # If running multiple Nklave instances (e.g., primary/passive)
+  # - job_name: 'nklave-ha'
+  #   static_configs:
+  #     - targets:
+  #       - 'nklave-primary:9001'
+  #       - 'nklave-passive:9001'
+  #   relabel_configs:
+  #     - source_labels: [__address__]
+  #       regex: '(.+):9001'
+  #       target_label: instance
+  #       replacement: '$1'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

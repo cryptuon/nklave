@@ -1,0 +1,58 @@
+# Nklave + Lighthouse Integration Testing
+# Extends the base docker-compose.yml
+
+version: '3.8'
+
+services:
+  nklave:
+    extends:
+      file: docker-compose.yml
+      service: nklave
+
+  # Mock beacon node for testing
+  beacon-mock:
+    build:
+      context: ../tests/mocks/beacon-mock
+      dockerfile: Dockerfile
+    container_name: beacon-mock
+    ports:
+      - "5052:5052"
+    networks:
+      - nklave-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5052/eth/v1/beacon/genesis"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  # Lighthouse validator client
+  lighthouse-vc:
+    image: sigp/lighthouse:${LIGHTHOUSE_VERSION:-latest}
+    container_name: lighthouse-vc
+    command: |
+      lighthouse vc
+        --network holesky
+        --beacon-nodes http://beacon-mock:5052
+        --web3-signer-url http://nklave:9000
+        --suggested-fee-recipient 0x0000000000000000000000000000000000000000
+        --datadir /data
+        --init-slashing-protection
+    volumes:
+      - lighthouse-data:/data
+      - ./test-validators:/validators:ro
+    depends_on:
+      nklave:
+        condition: service_healthy
+      beacon-mock:
+        condition: service_healthy
+    networks:
+      - nklave-net
+    restart: unless-stopped
+
+volumes:
+  nklave-keys:
+  nklave-data:
+  lighthouse-data:
+
+networks:
+  nklave-net:

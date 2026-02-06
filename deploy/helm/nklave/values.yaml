@@ -1,0 +1,191 @@
+# Nklave Helm Chart Values
+# Default values for development/testing
+
+# Number of replicas (use 1 for primary, can add passives later)
+replicaCount: 1
+
+image:
+  repository: nklave/nklave
+  pullPolicy: IfNotPresent
+  tag: ""  # Defaults to Chart appVersion
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Service account configuration
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+# Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 9000
+  metricsPort: 9001
+
+# Ingress configuration
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: nklave.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Resource limits
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Autoscaling (disabled by default - signing should be deterministic)
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 1
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity rules
+affinity: {}
+
+# Persistent volume for keys and data
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  annotations: {}
+
+# Nklave configuration
+config:
+  # Server settings
+  server:
+    listenAddr: "0.0.0.0:9000"
+    metricsAddr: "0.0.0.0:9001"
+    checkpointIntervalSecs: 300
+    checkpointBackupCount: 3
+
+  # API settings
+  api:
+    requestTimeoutSecs: 30
+    maxConcurrentRequests: 100
+    maxBodySize: 1048576
+
+  # Authentication
+  auth:
+    # Mode: none, bearer, mtls, bearer_or_mtls
+    mode: "bearer"
+    # Tokens can also be set via NKLAVE_API_TOKENS env var
+    tokens: []
+
+  # Logging settings
+  logging:
+    encrypt: false
+    rotation:
+      maxSizeMb: 100
+      maxFiles: 10
+      compress: false
+
+  # Security settings
+  security:
+    keyProvider: "local"
+
+# TLS configuration
+tls:
+  enabled: false
+  # Use cert-manager for automatic certificate management
+  certManager:
+    enabled: false
+    issuerRef:
+      name: ""
+      kind: ClusterIssuer
+  # Or provide certificates directly
+  secretName: ""
+  # Certificate paths (when using secrets)
+  certPath: /etc/nklave/tls/tls.crt
+  keyPath: /etc/nklave/tls/tls.key
+
+# Replication configuration (for HA)
+replication:
+  enabled: false
+  role: "primary"
+  listenAddr: "0.0.0.0:26660"
+  heartbeatIntervalMs: 1000
+  maxBufferSize: 10000
+  tls:
+    enabled: false
+    certPath: /etc/nklave/replication-tls/tls.crt
+    keyPath: /etc/nklave/replication-tls/tls.key
+    caCertPath: /etc/nklave/replication-tls/ca.crt
+
+# Probes
+livenessProbe:
+  httpGet:
+    path: /eth/v1/keystores
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /eth/v1/keystores
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Prometheus ServiceMonitor
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+  annotations: {}
+
+# Extra environment variables
+extraEnv: []
+
+# Extra volume mounts
+extraVolumeMounts: []
+
+# Extra volumes
+extraVolumes: []

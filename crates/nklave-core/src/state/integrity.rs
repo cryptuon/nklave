@@ -181,6 +181,31 @@ impl StateIntegrity {
             decision,
             signing_root,
             prev_state_hash: self.current_hash,
+            signing_context: None,
+        }
+    }
+
+    /// Create a decision record with proper sequencing and signing context
+    pub fn prepare_record_with_context(
+        &self,
+        validator_pubkey: [u8; 48],
+        request_type: SigningType,
+        decision: PolicyDecision,
+        signing_root: [u8; 32],
+        signing_context: SigningContext,
+    ) -> DecisionRecord {
+        DecisionRecord {
+            sequence: self.sequence_number + 1,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            validator_pubkey,
+            request_type,
+            decision,
+            signing_root,
+            prev_state_hash: self.current_hash,
+            signing_context: Some(signing_context),
         }
     }
 
@@ -229,6 +254,49 @@ impl Default for StateIntegrity {
     }
 }
 
+/// Context for signing request - captures slot/epoch data for state recovery
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SigningContext {
+    // Ethereum contexts
+    /// Block proposal context (Ethereum)
+    BlockProposal {
+        /// Slot number for the block
+        slot: u64,
+    },
+    /// Attestation context (Ethereum)
+    Attestation {
+        /// Source epoch
+        source_epoch: u64,
+        /// Target epoch
+        target_epoch: u64,
+    },
+
+    // Cosmos contexts
+    /// Cosmos vote context (prevote or precommit)
+    CosmosVote {
+        /// Block height
+        height: i64,
+        /// Consensus round
+        round: i32,
+        /// Vote type (0x01 = prevote, 0x02 = precommit)
+        vote_type: u8,
+        /// Block hash being voted for (None = nil vote)
+        block_hash: Option<[u8; 32]>,
+    },
+    /// Cosmos proposal context
+    CosmosProposal {
+        /// Block height
+        height: i64,
+        /// Consensus round
+        round: i32,
+        /// Block hash being proposed
+        block_hash: [u8; 32],
+    },
+
+    /// Other signing operations (RANDAO, sync committee, etc.)
+    Other,
+}
+
 /// A record of a signing decision
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionRecord {
@@ -255,6 +323,10 @@ pub struct DecisionRecord {
     /// Hash of state before this decision
     #[serde(serialize_with = "serialize_bytes::<_, 32>", deserialize_with = "deserialize_bytes::<_, 32>")]
     pub prev_state_hash: [u8; 32],
+
+    /// Signing context with slot/epoch data for state recovery
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signing_context: Option<SigningContext>,
 }
 
 impl DecisionRecord {

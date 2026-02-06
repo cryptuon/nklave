@@ -1,0 +1,159 @@
+# Nklave Prometheus Alerting Rules
+#
+# These rules monitor the Nklave signing security layer for operational issues.
+# Import this file into your Prometheus configuration.
+
+groups:
+  - name: nklave_signing
+    rules:
+      # Alert when signing refusals are happening frequently
+      # This could indicate a misconfigured validator client or attack attempt
+      - alert: NklaveHighRefusalRate
+        expr: rate(nklave_signing_refusals_total[5m]) > 0.1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High signing refusal rate detected"
+          description: "Nklave is refusing {{ $value | printf \"%.2f\" }} signing requests per second. This may indicate validator misconfiguration or a slashing attempt."
+
+      # Alert when no signing activity for extended period
+      # Could indicate validator client disconnection
+      - alert: NklaveNoSigningActivity
+        expr: rate(nklave_signing_requests_total[30m]) == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No signing activity for 30 minutes"
+          description: "Nklave has not processed any signing requests in 30 minutes. Check validator client connectivity."
+
+      # Alert on double proposal attempts
+      - alert: NklaveDoubleProposalAttempt
+        expr: increase(nklave_signing_refusals_total{reason="DoubleProposal"}[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Double proposal attempt detected"
+          description: "A double block proposal attempt was detected and prevented. Investigate validator configuration immediately."
+
+      # Alert on surround vote attempts
+      - alert: NklaveSurroundVoteAttempt
+        expr: increase(nklave_signing_refusals_total{reason="SurroundVote"}[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Surround vote attempt detected"
+          description: "A surround vote attempt was detected and prevented. This is a serious slashing condition."
+
+      # Alert on double vote attempts
+      - alert: NklaveDoubleVoteAttempt
+        expr: increase(nklave_signing_refusals_total{reason="DoubleVote"}[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Double vote attempt detected"
+          description: "A double vote attempt was detected and prevented. Investigate validator configuration."
+
+      # Alert on Cosmos double signing attempts
+      - alert: NklaveCosmosDoubleSigningAttempt
+        expr: increase(nklave_signing_refusals_total{reason="CosmosDoubleSigning"}[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Cosmos double signing attempt detected"
+          description: "A Cosmos double signing attempt was detected and prevented at the same height/round."
+
+  - name: nklave_state
+    rules:
+      # Alert when checkpoint is stale
+      - alert: NklaveCheckpointStale
+        expr: nklave_checkpoint_age_seconds > 3600
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Checkpoint is stale"
+          description: "The last checkpoint was saved {{ $value | printf \"%.0f\" }} seconds ago. Expected checkpoint every 5 minutes."
+
+      # Alert on state rollback (critical security issue)
+      - alert: NklaveStateRollback
+        expr: increase(nklave_signing_refusals_total{reason="StateRollback"}[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "State rollback detected"
+          description: "A state rollback was detected. This could indicate tampering or data corruption. Immediate investigation required."
+
+      # Alert when state sequence hasn't advanced
+      - alert: NklaveStateStale
+        expr: changes(nklave_state_sequence[1h]) == 0 and nklave_state_sequence > 0
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "No state changes for 1 hour"
+          description: "The state sequence number hasn't changed in 1 hour. This may be normal during low activity periods."
+
+  - name: nklave_operations
+    rules:
+      # Alert when service restarts frequently
+      - alert: NklaveFrequentRestarts
+        expr: changes(nklave_startup_timestamp_seconds[1h]) > 2
+        labels:
+          severity: warning
+        annotations:
+          summary: "Nklave restarting frequently"
+          description: "Nklave has restarted {{ $value }} times in the last hour. Check for crashes or configuration issues."
+
+      # Alert when no validators are loaded
+      - alert: NklaveNoValidators
+        expr: nklave_validators_total == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No validators loaded"
+          description: "Nklave has no validator keys loaded. The service cannot sign any messages."
+
+      # Alert on high signing latency
+      - alert: NklaveHighSigningLatency
+        expr: histogram_quantile(0.99, rate(nklave_signing_latency_seconds_bucket[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High signing latency detected"
+          description: "99th percentile signing latency is {{ $value | printf \"%.3f\" }} seconds. Expected < 100ms."
+
+      # Alert when uptime metric stops updating (service may be frozen)
+      - alert: NklaveServiceFrozen
+        expr: changes(nklave_uptime_seconds[5m]) == 0 and nklave_uptime_seconds > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Nklave service may be frozen"
+          description: "The uptime metric hasn't updated in 5 minutes. The service may be unresponsive."
+
+  - name: nklave_replication
+    rules:
+      # Alert when replication lag is high (for future HA deployments)
+      - alert: NklaveReplicationLag
+        expr: nklave_replication_lag_sequences > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High replication lag"
+          description: "Replication is {{ $value }} sequences behind. Passive node may not be ready for failover."
+
+      # Alert when passive node loses sync
+      - alert: NklaveReplicationBroken
+        expr: changes(nklave_replication_lag_sequences[10m]) == 0 and nklave_replication_lag_sequences > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Replication has stopped"
+          description: "Replication lag hasn't changed in 10 minutes. The passive node may have lost connection."

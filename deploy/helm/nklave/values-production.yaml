@@ -1,0 +1,135 @@
+# Nklave Helm Chart Values - Production Configuration
+# Use this as a base for production deployments
+
+replicaCount: 1
+
+image:
+  repository: nklave/nklave
+  pullPolicy: Always
+  tag: "latest"  # Pin to specific version in production
+
+# Enhanced security context for production
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Production resource limits
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+# Larger persistent volume for production
+persistence:
+  enabled: true
+  storageClass: "fast-ssd"  # Use fast storage class
+  accessMode: ReadWriteOnce
+  size: 10Gi
+
+# Production configuration
+config:
+  server:
+    listenAddr: "0.0.0.0:9000"
+    metricsAddr: "0.0.0.0:9001"
+    checkpointIntervalSecs: 60  # More frequent checkpoints
+    checkpointBackupCount: 5
+
+  api:
+    requestTimeoutSecs: 30
+    maxConcurrentRequests: 200
+    maxBodySize: 1048576
+
+  auth:
+    mode: "bearer_or_mtls"
+    # Set tokens via NKLAVE_API_TOKENS secret
+
+  logging:
+    encrypt: true  # Enable encryption in production
+    rotation:
+      maxSizeMb: 100
+      maxFiles: 20
+      compress: true
+
+  security:
+    keyProvider: "local"  # Or "aws-kms" for enhanced security
+
+# Enable TLS in production
+tls:
+  enabled: true
+  certManager:
+    enabled: true
+    issuerRef:
+      name: "letsencrypt-prod"
+      kind: ClusterIssuer
+
+# Replication for HA (enable for multi-node setup)
+replication:
+  enabled: false
+  role: "primary"
+  tls:
+    enabled: true
+
+# Stricter probes for production
+livenessProbe:
+  httpGet:
+    path: /eth/v1/keystores
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /eth/v1/keystores
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 2
+
+# Enable PDB in production
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Enable monitoring
+serviceMonitor:
+  enabled: true
+  interval: 15s
+  scrapeTimeout: 10s
+  labels:
+    release: prometheus
+
+# Node affinity for dedicated nodes
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: node-type
+              operator: In
+              values:
+                - validator-signing
+
+# Tolerate validator taints
+tolerations:
+  - key: "dedicated"
+    operator: "Equal"
+    value: "validator"
+    effect: "NoSchedule"

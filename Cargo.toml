@@ -5,6 +5,8 @@ members = [
     "crates/nklave-api",
     "crates/nklave-storage",
     "crates/nklave-server",
+    "crates/nklave-cosmos",
+    "crates/nklave-cli",
 ]
 
 [workspace.package]
@@ -19,6 +21,8 @@ authors = ["Nklave Team"]
 nklave-core = { path = "crates/nklave-core" }
 nklave-api = { path = "crates/nklave-api" }
 nklave-storage = { path = "crates/nklave-storage" }
+nklave-cosmos = { path = "crates/nklave-cosmos" }
+nklave-cli = { path = "crates/nklave-cli" }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -31,13 +35,18 @@ tower-http = { version = "0.5", features = ["cors", "trace", "timeout", "limit"]
 
 # TLS
 rustls-pemfile = "2"
+tokio-rustls = "0.26"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# BLS cryptography
+# BLS cryptography (Ethereum)
 blst = "0.3"
+
+# Ed25519 cryptography (Cosmos)
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
 
 # Hashing and crypto
 sha2 = "0.10"
@@ -68,6 +77,17 @@ toml = "0.8"
 # Testing
 tempfile = "3"
 criterion = { version = "0.5", features = ["html_reports"] }
+
+# Async
+async-trait = "0.1"
+
+# AWS SDK (for KMS key provider)
+aws-config = "1.1"
+aws-sdk-kms = "1.15"
+
+# UI embedding
+rust-embed = { version = "8", features = ["interpolate-folder-path"] }
+mime_guess = "2"
 
 [profile.release]
 lto = true

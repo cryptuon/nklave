@@ -141,6 +141,15 @@ pub struct BlsKeypair {
     pub public: BlsPublicKey,
 }
 
+impl std::fmt::Debug for BlsKeypair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BlsKeypair")
+            .field("public", &self.public.to_hex())
+            .field("secret", &"[REDACTED]")
+            .finish()
+    }
+}
+
 impl BlsKeypair {
     /// Create a new keypair from a secret key
     pub fn from_secret(secret: BlsSecretKey) -> Self {

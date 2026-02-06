@@ -1,0 +1,116 @@
+# Nklave Docker Image with Embedded UI
+# Multi-stage build for minimal production image
+
+# =============================================================================
+# Stage 1: Build Frontend
+# =============================================================================
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /ui
+
+# Install pnpm
+RUN npm install -g pnpm
+
+# Copy package files first for dependency caching
+COPY ui/package.json ui/pnpm-lock.yaml* ./
+
+# Install dependencies (fallback if no lockfile)
+RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+
+# Copy source and build
+COPY ui/ ./
+RUN pnpm build
+
+# =============================================================================
+# Stage 2: Build Rust Backend
+# =============================================================================
+FROM rust:1.75-slim-bookworm AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy manifests first for dependency caching
+COPY Cargo.toml Cargo.lock ./
+COPY crates/nklave-core/Cargo.toml crates/nklave-core/
+COPY crates/nklave-api/Cargo.toml crates/nklave-api/
+COPY crates/nklave-storage/Cargo.toml crates/nklave-storage/
+COPY crates/nklave-server/Cargo.toml crates/nklave-server/
+COPY crates/nklave-cosmos/Cargo.toml crates/nklave-cosmos/
+COPY crates/nklave-cli/Cargo.toml crates/nklave-cli/
+
+# Create dummy source files for dependency caching
+RUN mkdir -p crates/nklave-core/src && echo "pub fn dummy() {}" > crates/nklave-core/src/lib.rs && \
+    mkdir -p crates/nklave-api/src && echo "pub fn dummy() {}" > crates/nklave-api/src/lib.rs && \
+    mkdir -p crates/nklave-storage/src && echo "pub fn dummy() {}" > crates/nklave-storage/src/lib.rs && \
+    mkdir -p crates/nklave-server/src && echo "fn main() {}" > crates/nklave-server/src/main.rs && \
+    mkdir -p crates/nklave-cosmos/src && echo "pub fn dummy() {}" > crates/nklave-cosmos/src/lib.rs && \
+    mkdir -p crates/nklave-cli/src && echo "pub fn dummy() {}" > crates/nklave-cli/src/lib.rs
+
+# Create empty ui/dist directory for dependency compilation
+RUN mkdir -p ui/dist && echo "<!-- placeholder -->" > ui/dist/index.html
+
+# Build dependencies only
+RUN cargo build --release 2>/dev/null || true
+
+# Copy actual source code
+COPY crates/ crates/
+
+# Copy built frontend from Stage 1
+COPY --from=frontend-builder /ui/dist ui/dist
+
+# Touch source files to ensure rebuild
+RUN find crates -name "*.rs" -exec touch {} \;
+
+# Build the project with UI embedded
+RUN cargo build --release
+
+# =============================================================================
+# Stage 3: Runtime
+# =============================================================================
+FROM debian:bookworm-slim AS runtime
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create nklave user
+RUN useradd -r -s /bin/false nklave
+
+# Create directories
+RUN mkdir -p /var/lib/nklave/keys /var/lib/nklave/data /etc/nklave && \
+    chown -R nklave:nklave /var/lib/nklave /etc/nklave
+
+# Copy binaries
+COPY --from=builder /build/target/release/nklave /usr/local/bin/
+COPY --from=builder /build/target/release/generate-test-keys /usr/local/bin/
+COPY --from=builder /build/target/release/slashing-protection /usr/local/bin/
+
+# Set permissions
+RUN chmod +x /usr/local/bin/nklave /usr/local/bin/generate-test-keys /usr/local/bin/slashing-protection
+
+# Switch to nklave user
+USER nklave
+
+# Set default environment
+ENV RUST_LOG=nklave=info
+ENV NKLAVE_KEYS_DIR=/var/lib/nklave/keys
+ENV NKLAVE_DATA_DIR=/var/lib/nklave/data
+
+# Expose ports
+# 9000 - API server (with embedded UI)
+# 9001 - Metrics (Prometheus)
+EXPOSE 9000 9001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:9000/livez || exit 1
+
+# Default command
+CMD ["nklave"]

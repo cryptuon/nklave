@@ -1,0 +1,43 @@
+[package]
+name = "nklave-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Command-line interface for Nklave operations"
+
+[[bin]]
+name = "nklave"
+path = "src/main.rs"
+
+[dependencies]
+# Internal crates
+nklave-core = { path = "../nklave-core" }
+nklave-storage = { path = "../nklave-storage" }
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Formatting
+hex = { workspace = true }
+chrono = { version = "0.4", features = ["serde"] }
+comfy-table = "7"

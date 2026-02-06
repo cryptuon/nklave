@@ -1,0 +1,66 @@
+Nklave has been deployed successfully!
+
+{{- if .Values.ingress.enabled }}
+
+Access Nklave via the ingress:
+{{- range $host := .Values.ingress.hosts }}
+  {{- range .paths }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+
+{{- else if contains "NodePort" .Values.service.type }}
+
+Get the application URL by running these commands:
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "nklave.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+
+{{- else if contains "LoadBalancer" .Values.service.type }}
+
+Get the application URL by running these commands:
+  NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+  You can watch the status by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "nklave.fullname" . }}'
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "nklave.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ .Values.service.port }}
+
+{{- else if contains "ClusterIP" .Values.service.type }}
+
+Access Nklave using port-forward:
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "nklave.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+
+Then access the API at: http://localhost:{{ .Values.service.port }}
+
+{{- end }}
+
+API Endpoints:
+  - GET  /eth/v1/keystores     - List validator public keys
+  - POST /eth/v1/keystores     - Import keystores
+  - DELETE /eth/v1/keystores   - Delete keystores
+  - POST /api/v1/sign/{pubkey} - Sign a message
+
+{{- if .Values.serviceMonitor.enabled }}
+
+Prometheus ServiceMonitor is enabled. Metrics available at:
+  http://{{ include "nklave.fullname" . }}:{{ .Values.service.metricsPort }}/metrics
+{{- end }}
+
+{{- if .Values.replication.enabled }}
+
+Replication is enabled with role: {{ .Values.replication.role }}
+{{- if eq .Values.replication.role "primary" }}
+Configure passive nodes to connect to: {{ include "nklave.fullname" . }}-headless:26660
+{{- end }}
+{{- end }}
+
+{{- if not .Values.tls.enabled }}
+
+WARNING: TLS is not enabled. Consider enabling TLS for production deployments.
+{{- end }}
+
+{{- if eq .Values.config.auth.mode "none" }}
+
+WARNING: Authentication is disabled. This is not recommended for production.
+{{- end }}
+
+For more information, visit: https://github.com/nklave/nklave

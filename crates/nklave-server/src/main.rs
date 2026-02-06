@@ -4,15 +4,34 @@
 
 use anyhow::{Context, Result};
 use metrics_exporter_prometheus::PrometheusBuilder;
-use nklave_api::{create_router, AppState};
+use nklave_api::{create_router, create_router_with_auth, AppState, AuthConfig as ApiAuthConfig, AuthMode, FullApiConfig};
 use nklave_core::{load_keystores_from_dir, metrics as core_metrics, SigningService};
-use nklave_storage::{Checkpoint, DecisionLog};
+use nklave_storage::{
+    Checkpoint, CheckpointProvider, CheckpointScheduler, CheckpointSchedulerHandle,
+    DecisionLog, SchedulerConfig,
+};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod config;
 
 use config::Config;
+
+/// Wrapper to implement CheckpointProvider for SigningService
+struct SigningServiceCheckpointProvider {
+    service: Arc<SigningService>,
+}
+
+impl CheckpointProvider for SigningServiceCheckpointProvider {
+    fn integrity(&self) -> nklave_core::state::integrity::StateIntegrity {
+        self.service.integrity()
+    }
+
+    fn validator_states(&self) -> HashMap<[u8; 48], nklave_core::state::validator::ValidatorState> {
+        self.service.validator_states()
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -45,6 +64,9 @@ async fn main() -> Result<()> {
             .context("Failed to install Prometheus metrics exporter")?;
         tracing::info!(metrics_addr = %metrics_addr, "Prometheus metrics endpoint started");
     }
+
+    // Initialize startup metrics
+    core_metrics::init_startup_metrics();
 
     // Ensure directories exist
     std::fs::create_dir_all(&config.keys_dir)
@@ -119,6 +141,30 @@ async fn main() -> Result<()> {
 
     let signing_service = Arc::new(signing_service);
 
+    // Start checkpoint scheduler if configured
+    let scheduler_handle: Option<CheckpointSchedulerHandle> = if config.checkpoint_interval_secs > 0 {
+        let provider = Arc::new(SigningServiceCheckpointProvider {
+            service: signing_service.clone(),
+        });
+
+        let scheduler_config = SchedulerConfig {
+            checkpoint_path: checkpoint_path.clone(),
+            interval_secs: config.checkpoint_interval_secs,
+            backup_count: config.checkpoint_backup_count,
+        };
+
+        let handle = CheckpointScheduler::start(provider, scheduler_config);
+        tracing::info!(
+            interval_secs = config.checkpoint_interval_secs,
+            backup_count = config.checkpoint_backup_count,
+            "Checkpoint scheduler started"
+        );
+        Some(handle)
+    } else {
+        tracing::info!("Checkpoint scheduler disabled (interval = 0)");
+        None
+    };
+
     // Initialize decision log
     let decision_log = DecisionLog::open(&log_path)
         .with_context(|| format!("Failed to open decision log: {}", log_path.display()))?;
@@ -133,8 +179,59 @@ async fn main() -> Result<()> {
         checkpoint_path.clone(),
     ));
 
-    // Create router
-    let app = create_router(state);
+    // Create router (with authentication if configured)
+    let app = if let Some(ref auth_config) = config.auth {
+        let api_auth_config = match auth_config {
+            config::AuthConfig::None => None,
+            config::AuthConfig::Bearer { tokens: _ } => {
+                let all_tokens = auth_config.get_tokens();
+                if all_tokens.is_empty() {
+                    tracing::warn!("Bearer auth configured but no tokens provided");
+                    None
+                } else {
+                    tracing::info!(token_count = all_tokens.len(), "Bearer token authentication enabled");
+                    Some(ApiAuthConfig::with_bearer_tokens(all_tokens))
+                }
+            }
+            config::AuthConfig::Mtls => {
+                tracing::info!("mTLS authentication enabled");
+                Some(ApiAuthConfig::with_mtls_only())
+            }
+            config::AuthConfig::BearerOrMtls { tokens: _ } => {
+                let all_tokens = auth_config.get_tokens();
+                tracing::info!(token_count = all_tokens.len(), "Bearer or mTLS authentication enabled");
+                Some(ApiAuthConfig {
+                    mode: AuthMode::BearerOrMtls { tokens: all_tokens },
+                    ..ApiAuthConfig::default()
+                })
+            }
+        };
+
+        if let Some(api_auth) = api_auth_config {
+            create_router_with_auth(state.clone(), FullApiConfig {
+                auth: Some(api_auth),
+                ..FullApiConfig::default()
+            })
+        } else {
+            create_router(state.clone())
+        }
+    } else {
+        // Check for environment variable token
+        let env_tokens: Vec<String> = std::env::var("NKLAVE_API_TOKENS")
+            .map(|s| s.split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect())
+            .unwrap_or_default();
+
+        if !env_tokens.is_empty() {
+            tracing::info!(token_count = env_tokens.len(), "Bearer token authentication enabled via environment");
+            create_router_with_auth(state.clone(), FullApiConfig {
+                auth: Some(ApiAuthConfig::with_bearer_tokens(env_tokens)),
+                ..FullApiConfig::default()
+            })
+        } else {
+            tracing::warn!("No authentication configured - API endpoints are unprotected");
+            create_router(state.clone())
+        }
+    };
 
     // Start server (with or without TLS)
     if let Some(tls_config) = &config.tls {
@@ -168,6 +265,23 @@ async fn main() -> Result<()> {
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown_signal())
             .await?;
+    }
+
+    // Stop the checkpoint scheduler (this will save a final checkpoint)
+    if let Some(handle) = scheduler_handle {
+        tracing::info!("Stopping checkpoint scheduler...");
+        handle.shutdown();
+        // Give the scheduler time to save its final checkpoint
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    // Perform graceful shutdown with final checkpoint
+    // (This is a backup in case the scheduler didn't save or wasn't running)
+    tracing::info!("Creating final checkpoint before shutdown...");
+    if let Err(e) = create_shutdown_checkpoint(&state, &checkpoint_path, config.checkpoint_backup_count) {
+        tracing::error!(error = %e, "Failed to create final checkpoint");
+    } else {
+        tracing::info!("Final checkpoint created successfully");
     }
 
     tracing::info!("Server shutdown complete");
@@ -213,6 +327,41 @@ async fn load_rustls_config(
     .with_context(|| "Failed to build TLS configuration")?;
 
     Ok(config)
+}
+
+/// Create a checkpoint during shutdown
+fn create_shutdown_checkpoint(
+    state: &Arc<AppState>,
+    checkpoint_path: &std::path::Path,
+    backup_count: u32,
+) -> anyhow::Result<()> {
+    let integrity = state.signing_service.integrity();
+    let validators = state.signing_service.validator_states();
+
+    let checkpoint = Checkpoint::new(&integrity, validators);
+
+    // Log the checkpoint details
+    tracing::info!(
+        sequence = checkpoint.sequence,
+        state_hash = %hex::encode(&checkpoint.state_hash[..8]),
+        validator_count = checkpoint.validators.len(),
+        "Creating shutdown checkpoint"
+    );
+
+    // Save the checkpoint atomically with backup rotation
+    checkpoint.save_atomic(checkpoint_path, backup_count)
+        .with_context(|| format!("Failed to save checkpoint to {}", checkpoint_path.display()))?;
+
+    // Also sync the decision log if present
+    if let Some(ref log_mutex) = state.decision_log {
+        if let Ok(mut log) = log_mutex.lock() {
+            log.sync()
+                .with_context(|| "Failed to sync decision log")?;
+            tracing::debug!("Decision log synced");
+        }
+    }
+
+    Ok(())
 }
 
 /// Wait for shutdown signal

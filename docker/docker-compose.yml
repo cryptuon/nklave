@@ -1,0 +1,42 @@
+# Nklave Docker Compose Configuration
+# Base configuration for development and testing
+
+version: '3.8'
+
+services:
+  nklave:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.nklave
+    container_name: nklave
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Metrics
+    volumes:
+      - nklave-keys:/var/lib/nklave/keys
+      - nklave-data:/var/lib/nklave/data
+      - ./config:/etc/nklave:ro
+    environment:
+      - RUST_LOG=nklave=info,tower_http=debug
+      - NKLAVE_KEYSTORE_PASSWORD=${NKLAVE_KEYSTORE_PASSWORD:-testpassword}
+      - NKLAVE_LISTEN_ADDR=0.0.0.0:9000
+      - NKLAVE_METRICS_ADDR=0.0.0.0:9001
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/livez"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - nklave-net
+
+volumes:
+  nklave-keys:
+    driver: local
+  nklave-data:
+    driver: local
+
+networks:
+  nklave-net:
+    driver: bridge

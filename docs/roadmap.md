@@ -2,28 +2,42 @@
 
 This roadmap is a planning artifact. Dates are targets and may shift based on customer feedback and engineering capacity.
 
-*Last updated: January 2026*
+*Last updated: February 2026*
 
 ---
 
-## Phase 0: Documentation and Alignment (by February 2026)
+## Phase 0: Documentation and Alignment (by February 2026) ✅ COMPLETE
 
-- Publish product, architecture, and threat-model documentation.
-- Define MVP scope and acceptance criteria.
-- Select the first Ethereum validator client to support (Lighthouse or Teku).
-- Finalize multi-chain architecture design.
+- [x] Publish product, architecture, and threat-model documentation.
+- [x] Define MVP scope and acceptance criteria.
+- [x] Select the first Ethereum validator client to support (Lighthouse or Teku).
+- [x] Finalize multi-chain architecture design.
 
-## Phase 1: Ethereum MVP (March to May 2026)
+## Phase 1: Ethereum MVP (March to May 2026) ✅ COMPLETE
 
-- Implement the signing enclave with Ethereum slashing rules:
-  - Double proposal prevention.
-  - Double vote prevention.
-  - Surround vote detection.
-- Implement a host proxy exposing the chosen client's remote signer interface.
-- Add deterministic refusal codes and structured audit logs.
-- Add basic state integrity with append-only hash chaining.
-- Support EIP-3076 slashing protection database import/export.
-- Build a minimal deployment bundle for local testing.
+**Core Signing Implementation:**
+- [x] Implement the signing enclave with Ethereum slashing rules:
+  - [x] Double proposal prevention.
+  - [x] Double vote prevention.
+  - [x] Surround vote detection.
+- [x] Implement a host proxy exposing Web3Signer-compatible remote signer interface.
+- [x] Add deterministic refusal codes and structured audit logs.
+- [x] Add basic state integrity with append-only hash chaining.
+- [x] Support EIP-3076 slashing protection database import/export.
+
+**Production Hardening (completed ahead of schedule):**
+- [x] Add SigningContext to DecisionRecord for complete state recovery.
+- [x] Implement graceful shutdown with final checkpoint.
+- [x] Add input validation for attestation epochs.
+- [x] Add health check endpoints (/health, /livez, /readyz).
+- [x] Add enhanced operational metrics (uptime, per-validator watermarks).
+- [x] Implement atomic checkpoint writes with backup rotation.
+
+**Deployment Infrastructure:**
+- [x] Build Docker infrastructure (Dockerfile, docker-compose).
+- [x] Create Lighthouse integration test environment.
+- [x] Create Teku integration test environment.
+- [x] Build mock beacon node for integration testing.
 
 ## Phase 2: Pilot-Ready + Cosmos Support (June to August 2026)
 

@@ -25,6 +25,10 @@ thiserror = { workspace = true }
 # Logging
 tracing = { workspace = true }
 
+# UI embedding
+rust-embed = { workspace = true }
+mime_guess = { workspace = true }
+
 [dev-dependencies]
 tokio = { workspace = true }
 tempfile = { workspace = true }

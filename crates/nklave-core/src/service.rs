@@ -6,7 +6,7 @@ use crate::keys::bls::{BlsKeypair, BlsSignature};
 use crate::metrics;
 use crate::policy::ethereum::EthereumPolicy;
 use crate::policy::types::{PolicyDecision, RefusalCode, SigningType};
-use crate::state::integrity::{DecisionRecord, IntegrityError, StateIntegrity};
+use crate::state::integrity::{DecisionRecord, IntegrityError, SigningContext, StateIntegrity};
 use crate::state::validator::ValidatorState;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -178,13 +178,14 @@ impl SigningService {
                 // Record the signing
                 state.record_block_signing(slot, signing_root);
 
-                // Record decision in integrity tracker
+                // Record decision in integrity tracker with signing context
                 let mut integrity = self.integrity.write().unwrap();
-                let record = integrity.prepare_record(
+                let record = integrity.prepare_record_with_context(
                     *pubkey,
                     SigningType::BlockProposal,
                     PolicyDecision::Allow,
                     signing_root,
+                    SigningContext::BlockProposal { slot },
                 );
                 integrity
                     .record_decision(&record)
@@ -195,6 +196,7 @@ impl SigningService {
                 metrics::record_signing_success("block_proposal", &validator_hex);
                 metrics::record_signing_latency("block_proposal", elapsed);
                 metrics::record_block_signed(&validator_hex);
+                metrics::set_last_signed_slot(&validator_hex, slot);
                 metrics::set_state_sequence(integrity.sequence_number);
 
                 Ok(SigningResult {
@@ -203,13 +205,14 @@ impl SigningService {
                 })
             }
             PolicyDecision::Refuse(code) => {
-                // Record the refusal in integrity tracker
+                // Record the refusal in integrity tracker with signing context
                 let mut integrity = self.integrity.write().unwrap();
-                let record = integrity.prepare_record(
+                let record = integrity.prepare_record_with_context(
                     *pubkey,
                     SigningType::BlockProposal,
                     PolicyDecision::Refuse(code),
                     signing_root,
+                    SigningContext::BlockProposal { slot },
                 );
                 integrity
                     .record_decision(&record)
@@ -263,13 +266,17 @@ impl SigningService {
                 // Record the signing
                 state.record_attestation_signing(source_epoch, target_epoch, signing_root);
 
-                // Record decision in integrity tracker
+                // Record decision in integrity tracker with signing context
                 let mut integrity = self.integrity.write().unwrap();
-                let record = integrity.prepare_record(
+                let record = integrity.prepare_record_with_context(
                     *pubkey,
                     SigningType::Attestation,
                     PolicyDecision::Allow,
                     signing_root,
+                    SigningContext::Attestation {
+                        source_epoch,
+                        target_epoch,
+                    },
                 );
                 integrity
                     .record_decision(&record)
@@ -280,6 +287,7 @@ impl SigningService {
                 metrics::record_signing_success("attestation", &validator_hex);
                 metrics::record_signing_latency("attestation", elapsed);
                 metrics::record_attestation_signed(&validator_hex);
+                metrics::set_last_signed_target_epoch(&validator_hex, target_epoch);
                 metrics::set_state_sequence(integrity.sequence_number);
 
                 Ok(SigningResult {
@@ -288,13 +296,17 @@ impl SigningService {
                 })
             }
             PolicyDecision::Refuse(code) => {
-                // Record the refusal in integrity tracker
+                // Record the refusal in integrity tracker with signing context
                 let mut integrity = self.integrity.write().unwrap();
-                let record = integrity.prepare_record(
+                let record = integrity.prepare_record_with_context(
                     *pubkey,
                     SigningType::Attestation,
                     PolicyDecision::Refuse(code),
                     signing_root,
+                    SigningContext::Attestation {
+                        source_epoch,
+                        target_epoch,
+                    },
                 );
                 integrity
                     .record_decision(&record)
@@ -332,13 +344,14 @@ impl SigningService {
         // Sign the message (no slashing protection needed for these types)
         let signature = keypair.sign(&signing_root);
 
-        // Record decision in integrity tracker
+        // Record decision in integrity tracker with signing context
         let mut integrity = self.integrity.write().unwrap();
-        let record = integrity.prepare_record(
+        let record = integrity.prepare_record_with_context(
             *pubkey,
             signing_type,
             PolicyDecision::Allow,
             signing_root,
+            SigningContext::Other,
         );
         integrity
             .record_decision(&record)
@@ -359,12 +372,14 @@ impl SigningService {
     /// Replay decision records (for crash recovery)
     ///
     /// This method is used during startup to replay decisions from the log
-    /// that occurred after the last checkpoint.
+    /// that occurred after the last checkpoint. It restores both the integrity
+    /// hash chain and the validator slashing protection state.
     pub fn replay_records(&self, records: Vec<DecisionRecord>) -> Result<u64, SigningServiceError> {
         let mut validators = self.validators.write().unwrap();
         let mut integrity = self.integrity.write().unwrap();
 
         let mut replayed = 0u64;
+        let mut state_restored = 0u64;
 
         for record in records {
             // Skip records we've already processed
@@ -377,45 +392,110 @@ impl SigningService {
                 .record_decision(&record)
                 .map_err(SigningServiceError::Integrity)?;
 
-            // Update validator state based on the decision
+            // Only restore state for allowed decisions (refusals don't change state)
             if record.decision.is_allowed() {
                 let state = validators
                     .entry(record.validator_pubkey)
                     .or_insert_with(|| ValidatorState::new(record.validator_pubkey));
 
-                match record.request_type {
-                    SigningType::BlockProposal => {
-                        // Extract slot from signing root context (simplified - in real impl would need more info)
-                        // For replay, we trust the record as valid
+                // Use signing context to restore validator state
+                match &record.signing_context {
+                    Some(SigningContext::BlockProposal { slot }) => {
+                        state.record_block_signing(*slot, record.signing_root);
                         tracing::debug!(
                             sequence = record.sequence,
-                            "Replayed block proposal record"
+                            slot = slot,
+                            "Replayed block proposal - restored slot state"
                         );
+                        state_restored += 1;
                     }
-                    SigningType::Attestation => {
+                    Some(SigningContext::Attestation {
+                        source_epoch,
+                        target_epoch,
+                    }) => {
+                        state.record_attestation_signing(
+                            *source_epoch,
+                            *target_epoch,
+                            record.signing_root,
+                        );
                         tracing::debug!(
                             sequence = record.sequence,
-                            "Replayed attestation record"
+                            source_epoch = source_epoch,
+                            target_epoch = target_epoch,
+                            "Replayed attestation - restored epoch state"
                         );
+                        state_restored += 1;
                     }
-                    _ => {
+                    Some(SigningContext::CosmosVote {
+                        height,
+                        round,
+                        vote_type,
+                        block_hash,
+                    }) => {
+                        // Restore Cosmos vote state
+                        if let Some(cosmos_state) = state.cosmos_state_mut() {
+                            let msg_type = match vote_type {
+                                1 => crate::state::validator::CosmosSignedMsgType::Prevote,
+                                2 => crate::state::validator::CosmosSignedMsgType::Precommit,
+                                _ => crate::state::validator::CosmosSignedMsgType::Prevote,
+                            };
+                            cosmos_state.record_vote(*height, *round, msg_type, *block_hash);
+                            tracing::debug!(
+                                sequence = record.sequence,
+                                height = height,
+                                round = round,
+                                "Replayed Cosmos vote - restored state"
+                            );
+                            state_restored += 1;
+                        }
+                    }
+                    Some(SigningContext::CosmosProposal {
+                        height,
+                        round,
+                        block_hash,
+                    }) => {
+                        // Restore Cosmos proposal state
+                        if let Some(cosmos_state) = state.cosmos_state_mut() {
+                            cosmos_state.record_vote(
+                                *height,
+                                *round,
+                                crate::state::validator::CosmosSignedMsgType::Proposal,
+                                Some(*block_hash),
+                            );
+                            tracing::debug!(
+                                sequence = record.sequence,
+                                height = height,
+                                round = round,
+                                "Replayed Cosmos proposal - restored state"
+                            );
+                            state_restored += 1;
+                        }
+                    }
+                    Some(SigningContext::Other) | None => {
+                        // Generic signing types don't have slashing-relevant state
                         tracing::debug!(
                             sequence = record.sequence,
                             request_type = ?record.request_type,
-                            "Replayed generic signing record"
+                            "Replayed generic signing record (no state to restore)"
                         );
                     }
                 }
-
-                // Note: Full replay would need to extract slot/epoch info from the record
-                // For now, we just verify the integrity chain
-                let _ = state; // Suppress unused warning
+            } else {
+                tracing::debug!(
+                    sequence = record.sequence,
+                    decision = ?record.decision,
+                    "Replayed refusal record"
+                );
             }
 
             replayed += 1;
         }
 
-        tracing::info!(replayed, "Replayed decision records");
+        tracing::info!(
+            replayed = replayed,
+            state_restored = state_restored,
+            "Replayed decision records"
+        );
         Ok(replayed)
     }
 

@@ -1,0 +1,33 @@
+# Docker ignore file for Nklave
+
+# Build artifacts
+target/
+*.rs.bk
+
+# IDE/editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Documentation (not needed in container)
+docs/
+
+# Docker files (avoid recursive copies)
+docker/
+
+# Test data
+tests/
+
+# CI/CD
+.github/
+
+# Local development
+*.log
+*.env
+.env.*

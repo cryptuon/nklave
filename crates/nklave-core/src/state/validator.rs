@@ -1,7 +1,9 @@
 //! Per-validator safety state management
 //!
-//! Tracks signing history to prevent slashable signatures
+//! Tracks signing history to prevent slashable signatures.
+//! Supports multiple blockchain networks: Ethereum, Cosmos.
 
+use crate::policy::types::ChainType;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 
@@ -34,31 +36,48 @@ where
 }
 
 /// Safety state for a single validator
+///
+/// Supports multiple chain types (Ethereum, Cosmos) with chain-specific state.
+/// For backward compatibility, checkpoints without chain_state are assumed to be Ethereum.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorState {
-    /// Validator's BLS public key
+    /// Validator's public key (48 bytes for BLS, 32 bytes for Ed25519)
+    /// For Ethereum: 48-byte BLS public key
+    /// For Cosmos: 32-byte Ed25519 public key (padded to 48 bytes for compatibility)
     #[serde(serialize_with = "serialize_bytes", deserialize_with = "deserialize_bytes")]
     pub pubkey: [u8; 48],
 
-    /// Highest slot for which a block was signed
+    // Legacy fields for backward compatibility with existing checkpoints
+    // These are used when chain_state is None (legacy Ethereum-only format)
+    /// Highest slot for which a block was signed (Ethereum legacy)
+    #[serde(default)]
     pub last_signed_block_slot: Option<u64>,
 
-    /// Map of slot -> signing_root for block proposals
-    /// Used to allow idempotent re-signing of the same block
+    /// Map of slot -> signing_root for block proposals (Ethereum legacy)
+    #[serde(default)]
     pub block_signing_roots: BTreeMap<u64, [u8; 32]>,
 
-    /// Highest source epoch in any signed attestation
+    /// Highest source epoch in any signed attestation (Ethereum legacy)
+    #[serde(default)]
     pub highest_source_epoch: u64,
 
-    /// Highest target epoch in any signed attestation
+    /// Highest target epoch in any signed attestation (Ethereum legacy)
+    #[serde(default)]
     pub highest_target_epoch: u64,
 
-    /// Attestation history for surround vote detection
+    /// Attestation history for surround vote detection (Ethereum legacy)
+    #[serde(default)]
     pub attestation_history: AttestationHistory,
+
+    // New multi-chain field
+    /// Chain-specific state (new format)
+    /// If None, uses legacy Ethereum fields above
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chain_state: Option<ChainState>,
 }
 
 impl ValidatorState {
-    /// Create a new validator state with the given public key
+    /// Create a new Ethereum validator state with the given public key
     pub fn new(pubkey: [u8; 48]) -> Self {
         Self {
             pubkey,
@@ -67,19 +86,115 @@ impl ValidatorState {
             highest_source_epoch: 0,
             highest_target_epoch: 0,
             attestation_history: AttestationHistory::new(),
+            chain_state: None, // Use legacy format for Ethereum by default
         }
     }
 
+    /// Create a new Ethereum validator state (explicit)
+    pub fn new_ethereum(pubkey: [u8; 48]) -> Self {
+        Self {
+            pubkey,
+            last_signed_block_slot: None,
+            block_signing_roots: BTreeMap::new(),
+            highest_source_epoch: 0,
+            highest_target_epoch: 0,
+            attestation_history: AttestationHistory::new(),
+            chain_state: Some(ChainState::Ethereum(EthereumState::new())),
+        }
+    }
+
+    /// Create a new Cosmos validator state
+    ///
+    /// Note: Ed25519 pubkeys are 32 bytes, so they are zero-padded to 48 bytes
+    pub fn new_cosmos(pubkey: [u8; 32]) -> Self {
+        let mut full_pubkey = [0u8; 48];
+        full_pubkey[..32].copy_from_slice(&pubkey);
+
+        Self {
+            pubkey: full_pubkey,
+            // Legacy fields not used for Cosmos
+            last_signed_block_slot: None,
+            block_signing_roots: BTreeMap::new(),
+            highest_source_epoch: 0,
+            highest_target_epoch: 0,
+            attestation_history: AttestationHistory::new(),
+            chain_state: Some(ChainState::Cosmos(CosmosState::new())),
+        }
+    }
+
+    /// Get the chain type for this validator
+    pub fn chain_type(&self) -> ChainType {
+        match &self.chain_state {
+            Some(cs) => cs.chain_type(),
+            None => ChainType::Ethereum, // Legacy format is Ethereum
+        }
+    }
+
+    /// Get the Ethereum state for this validator
+    ///
+    /// Returns the chain_state if it's Ethereum, otherwise uses legacy fields
+    pub fn ethereum_state(&self) -> Option<EthereumState> {
+        match &self.chain_state {
+            Some(ChainState::Ethereum(state)) => Some(state.clone()),
+            Some(ChainState::Cosmos(_)) => None,
+            None => {
+                // Legacy format - construct EthereumState from legacy fields
+                Some(EthereumState {
+                    last_signed_block_slot: self.last_signed_block_slot,
+                    block_signing_roots: self.block_signing_roots.clone(),
+                    highest_source_epoch: self.highest_source_epoch,
+                    highest_target_epoch: self.highest_target_epoch,
+                    attestation_history: self.attestation_history.clone(),
+                })
+            }
+        }
+    }
+
+    /// Get the Cosmos state for this validator
+    pub fn cosmos_state(&self) -> Option<&CosmosState> {
+        match &self.chain_state {
+            Some(ChainState::Cosmos(state)) => Some(state),
+            _ => None,
+        }
+    }
+
+    /// Get the Cosmos state mutably
+    pub fn cosmos_state_mut(&mut self) -> Option<&mut CosmosState> {
+        match &mut self.chain_state {
+            Some(ChainState::Cosmos(state)) => Some(state),
+            _ => None,
+        }
+    }
+
+    // ========================================================================
+    // Ethereum-specific methods (for backward compatibility)
+    // ========================================================================
+
     /// Get the signing root for a block at the given slot, if any
     pub fn get_block_signing_root(&self, slot: u64) -> Option<&[u8; 32]> {
-        self.block_signing_roots.get(&slot)
+        match &self.chain_state {
+            Some(ChainState::Ethereum(state)) => state.block_signing_roots.get(&slot),
+            Some(ChainState::Cosmos(_)) => None,
+            None => self.block_signing_roots.get(&slot),
+        }
     }
 
     /// Record that a block was signed for the given slot
     pub fn record_block_signing(&mut self, slot: u64, signing_root: [u8; 32]) {
-        self.block_signing_roots.insert(slot, signing_root);
-        if self.last_signed_block_slot.is_none_or(|s| slot > s) {
-            self.last_signed_block_slot = Some(slot);
+        match &mut self.chain_state {
+            Some(ChainState::Ethereum(state)) => {
+                state.record_block_signing(slot, signing_root);
+            }
+            Some(ChainState::Cosmos(_)) => {
+                // No-op for Cosmos validators
+            }
+            None => {
+                // Legacy format
+                self.block_signing_roots.insert(slot, signing_root);
+                if self.last_signed_block_slot.is_none_or(|s| slot > s) {
+                    self.last_signed_block_slot = Some(slot);
+                }
+            }
         }
     }
 
@@ -89,8 +204,13 @@ impl ValidatorState {
         source_epoch: u64,
         target_epoch: u64,
     ) -> Option<&[u8; 32]> {
-        self.attestation_history
-            .get_signing_root(source_epoch, target_epoch)
+        match &self.chain_state {
+            Some(ChainState::Ethereum(state)) => {
+                state.attestation_history.get_signing_root(source_epoch, target_epoch)
+            }
+            Some(ChainState::Cosmos(_)) => None,
+            None => self.attestation_history.get_signing_root(source_epoch, target_epoch),
+        }
     }
 
     /// Record that an attestation was signed
@@ -100,27 +220,43 @@ impl ValidatorState {
         target_epoch: u64,
         signing_root: [u8; 32],
     ) {
-        self.attestation_history
-            .record(source_epoch, target_epoch, signing_root);
-
-        if source_epoch > self.highest_source_epoch {
-            self.highest_source_epoch = source_epoch;
-        }
-        if target_epoch > self.highest_target_epoch {
-            self.highest_target_epoch = target_epoch;
+        match &mut self.chain_state {
+            Some(ChainState::Ethereum(state)) => {
+                state.record_attestation_signing(source_epoch, target_epoch, signing_root);
+            }
+            Some(ChainState::Cosmos(_)) => {
+                // No-op for Cosmos validators
+            }
+            None => {
+                // Legacy format
+                self.attestation_history.record(source_epoch, target_epoch, signing_root);
+                if source_epoch > self.highest_source_epoch {
+                    self.highest_source_epoch = source_epoch;
+                }
+                if target_epoch > self.highest_target_epoch {
+                    self.highest_target_epoch = target_epoch;
+                }
+            }
         }
     }
 
     /// Prune old entries to limit memory usage
     /// Keeps entries within the weak subjectivity period
     pub fn prune(&mut self, min_slot: u64, min_epoch: u64) {
-        // Prune block signing roots older than min_slot
-        self.block_signing_roots = self
-            .block_signing_roots
-            .split_off(&min_slot);
-
-        // Prune attestation history
-        self.attestation_history.prune(min_epoch);
+        match &mut self.chain_state {
+            Some(ChainState::Ethereum(state)) => {
+                state.prune(min_slot, min_epoch);
+            }
+            Some(ChainState::Cosmos(state)) => {
+                // For Cosmos, use min_slot as min_height (they're similar concepts)
+                state.prune(min_slot as i64);
+            }
+            None => {
+                // Legacy format
+                self.block_signing_roots = self.block_signing_roots.split_off(&min_slot);
+                self.attestation_history.prune(min_epoch);
+            }
+        }
     }
 }
 
@@ -214,6 +350,253 @@ impl AttestationHistory {
             .retain(|source, _| *source >= min_epoch);
         self.max_target_by_source
             .retain(|source, _| *source >= min_epoch);
+    }
+}
+
+// ============================================================================
+// Cosmos/CometBFT State
+// ============================================================================
+
+/// Signed message type in Tendermint consensus
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum CosmosSignedMsgType {
+    /// Prevote (0x01)
+    Prevote,
+    /// Precommit (0x02)
+    Precommit,
+    /// Proposal (0x20)
+    Proposal,
+}
+
+/// Information about a signed vote in Cosmos
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CosmosSignedVote {
+    /// Hash of the block that was signed (None = nil vote)
+    pub block_hash: Option<[u8; 32]>,
+    /// When the signing occurred (unix timestamp)
+    pub signed_at: u64,
+}
+
+/// Cosmos/CometBFT-specific validator state
+///
+/// Tracks signed votes to prevent double-signing at the same (height, round, type).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CosmosState {
+    /// Chain ID this validator is bound to
+    pub chain_id: Option<String>,
+
+    /// Map of (height, round, type) -> signed vote info
+    /// Only stores the signature for each (height, round, type) combination
+    signed_votes: BTreeMap<(i64, i32, CosmosSignedMsgType), CosmosSignedVote>,
+
+    /// Highest height we've signed at
+    pub highest_height: i64,
+}
+
+impl CosmosState {
+    /// Create a new empty Cosmos state
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Get the signed vote at a specific (height, round, type), if any
+    pub fn get_signed_vote(
+        &self,
+        height: i64,
+        round: i32,
+        msg_type: CosmosSignedMsgType,
+    ) -> Option<&CosmosSignedVote> {
+        self.signed_votes.get(&(height, round, msg_type))
+    }
+
+    /// Record a new signed vote
+    pub fn record_vote(
+        &mut self,
+        height: i64,
+        round: i32,
+        msg_type: CosmosSignedMsgType,
+        block_hash: Option<[u8; 32]>,
+    ) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        self.signed_votes.insert(
+            (height, round, msg_type),
+            CosmosSignedVote {
+                block_hash,
+                signed_at: now,
+            },
+        );
+
+        if height > self.highest_height {
+            self.highest_height = height;
+        }
+    }
+
+    /// Prune old entries to limit memory usage
+    ///
+    /// Keeps entries within the specified height range
+    pub fn prune(&mut self, min_height: i64) {
+        self.signed_votes.retain(|(height, _, _), _| *height >= min_height);
+    }
+
+    /// Get the number of tracked votes
+    pub fn len(&self) -> usize {
+        self.signed_votes.len()
+    }
+
+    /// Check if the state is empty
+    pub fn is_empty(&self) -> bool {
+        self.signed_votes.is_empty()
+    }
+}
+
+// ============================================================================
+// Chain-agnostic state wrapper
+// ============================================================================
+
+/// Chain-specific state variants
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "chain_type")]
+pub enum ChainState {
+    /// Ethereum Beacon Chain state
+    Ethereum(EthereumState),
+    /// Cosmos/CometBFT state
+    Cosmos(CosmosState),
+}
+
+impl ChainState {
+    /// Get the chain type for this state
+    pub fn chain_type(&self) -> ChainType {
+        match self {
+            ChainState::Ethereum(_) => ChainType::Ethereum,
+            ChainState::Cosmos(_) => ChainType::Cosmos,
+        }
+    }
+
+    /// Get the Ethereum state if this is an Ethereum validator
+    pub fn as_ethereum(&self) -> Option<&EthereumState> {
+        match self {
+            ChainState::Ethereum(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    /// Get the Ethereum state mutably if this is an Ethereum validator
+    pub fn as_ethereum_mut(&mut self) -> Option<&mut EthereumState> {
+        match self {
+            ChainState::Ethereum(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    /// Get the Cosmos state if this is a Cosmos validator
+    pub fn as_cosmos(&self) -> Option<&CosmosState> {
+        match self {
+            ChainState::Cosmos(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    /// Get the Cosmos state mutably if this is a Cosmos validator
+    pub fn as_cosmos_mut(&mut self) -> Option<&mut CosmosState> {
+        match self {
+            ChainState::Cosmos(state) => Some(state),
+            _ => None,
+        }
+    }
+}
+
+/// Ethereum-specific validator state
+///
+/// This is the existing ValidatorState fields extracted for multi-chain support.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EthereumState {
+    /// Highest slot for which a block was signed
+    pub last_signed_block_slot: Option<u64>,
+
+    /// Map of slot -> signing_root for block proposals
+    /// Used to allow idempotent re-signing of the same block
+    pub block_signing_roots: BTreeMap<u64, [u8; 32]>,
+
+    /// Highest source epoch in any signed attestation
+    pub highest_source_epoch: u64,
+
+    /// Highest target epoch in any signed attestation
+    pub highest_target_epoch: u64,
+
+    /// Attestation history for surround vote detection
+    pub attestation_history: AttestationHistory,
+}
+
+impl Default for EthereumState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl EthereumState {
+    /// Create a new empty Ethereum state
+    pub fn new() -> Self {
+        Self {
+            last_signed_block_slot: None,
+            block_signing_roots: BTreeMap::new(),
+            highest_source_epoch: 0,
+            highest_target_epoch: 0,
+            attestation_history: AttestationHistory::new(),
+        }
+    }
+
+    /// Get the signing root for a block at the given slot, if any
+    pub fn get_block_signing_root(&self, slot: u64) -> Option<&[u8; 32]> {
+        self.block_signing_roots.get(&slot)
+    }
+
+    /// Record that a block was signed for the given slot
+    pub fn record_block_signing(&mut self, slot: u64, signing_root: [u8; 32]) {
+        self.block_signing_roots.insert(slot, signing_root);
+        if self.last_signed_block_slot.is_none_or(|s| slot > s) {
+            self.last_signed_block_slot = Some(slot);
+        }
+    }
+
+    /// Get the signing root for an attestation with the given source/target, if any
+    pub fn get_attestation_signing_root(
+        &self,
+        source_epoch: u64,
+        target_epoch: u64,
+    ) -> Option<&[u8; 32]> {
+        self.attestation_history
+            .get_signing_root(source_epoch, target_epoch)
+    }
+
+    /// Record that an attestation was signed
+    pub fn record_attestation_signing(
+        &mut self,
+        source_epoch: u64,
+        target_epoch: u64,
+        signing_root: [u8; 32],
+    ) {
+        self.attestation_history
+            .record(source_epoch, target_epoch, signing_root);
+
+        if source_epoch > self.highest_source_epoch {
+            self.highest_source_epoch = source_epoch;
+        }
+        if target_epoch > self.highest_target_epoch {
+            self.highest_target_epoch = target_epoch;
+        }
+    }
+
+    /// Prune old entries to limit memory usage
+    pub fn prune(&mut self, min_slot: u64, min_epoch: u64) {
+        // Prune block signing roots older than min_slot
+        self.block_signing_roots = self.block_signing_roots.split_off(&min_slot);
+
+        // Prune attestation history
+        self.attestation_history.prune(min_epoch);
     }
 }
 

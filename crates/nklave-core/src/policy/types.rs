@@ -24,12 +24,19 @@ impl PolicyDecision {
 /// Reason codes for refusing to sign
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RefusalCode {
+    // Ethereum-specific refusals
     /// Block already signed for this slot (Ethereum)
     DoubleProposal,
     /// Attestation already signed for this target epoch (Ethereum)
     DoubleVote,
     /// Attestation would create surround vote condition (Ethereum)
     SurroundVote,
+
+    // Cosmos-specific refusals
+    /// Double signing at same height/round (Cosmos)
+    CosmosDoubleSigning,
+
+    // General refusals
     /// Safety state continuity violated
     StateRollback,
     /// Request is malformed or missing required fields
@@ -38,6 +45,8 @@ pub enum RefusalCode {
     UnknownValidator,
     /// Signing domain not enabled
     UnsupportedDomain,
+    /// Chain type mismatch
+    ChainMismatch,
     /// Internal error during processing
     InternalError,
 }
@@ -55,8 +64,11 @@ impl RefusalCode {
             RefusalCode::DoubleProposal
             | RefusalCode::DoubleVote
             | RefusalCode::SurroundVote
+            | RefusalCode::CosmosDoubleSigning
             | RefusalCode::StateRollback => 412, // Precondition Failed
-            RefusalCode::InvalidRequest | RefusalCode::UnsupportedDomain => 400, // Bad Request
+            RefusalCode::InvalidRequest
+            | RefusalCode::UnsupportedDomain
+            | RefusalCode::ChainMismatch => 400, // Bad Request
             RefusalCode::UnknownValidator => 404, // Not Found
             RefusalCode::InternalError => 500,    // Internal Server Error
         }
@@ -70,10 +82,14 @@ impl RefusalCode {
                 "Slashing protection: attestation already signed for target epoch"
             }
             RefusalCode::SurroundVote => "Slashing protection: attestation would create surround vote",
+            RefusalCode::CosmosDoubleSigning => {
+                "Slashing protection: already signed different message at same height/round"
+            }
             RefusalCode::StateRollback => "State integrity: safety state continuity violated",
             RefusalCode::InvalidRequest => "Invalid signing request",
             RefusalCode::UnknownValidator => "Validator public key not found",
             RefusalCode::UnsupportedDomain => "Signing domain not supported",
+            RefusalCode::ChainMismatch => "Chain type mismatch for validator",
             RefusalCode::InternalError => "Internal error during signing",
         }
     }
@@ -93,6 +109,20 @@ pub enum SigningType {
     SyncCommitteeSelectionProof,
     SyncCommitteeContributionAndProof,
     ValidatorRegistration,
+
+    // Cosmos/CometBFT types
+    CosmosPrevote,
+    CosmosPrecommit,
+    CosmosProposal,
+}
+
+/// Supported blockchain networks
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ChainType {
+    /// Ethereum Beacon Chain (BLS12-381)
+    Ethereum,
+    /// Cosmos/CometBFT chains (Ed25519)
+    Cosmos,
 }
 
 impl SigningType {
@@ -100,8 +130,35 @@ impl SigningType {
     pub fn requires_slashing_protection(&self) -> bool {
         matches!(
             self,
-            SigningType::BlockProposal | SigningType::Attestation | SigningType::AggregateAndProof
+            // Ethereum slashing-protected types
+            SigningType::BlockProposal
+                | SigningType::Attestation
+                | SigningType::AggregateAndProof
+                // Cosmos slashing-protected types
+                | SigningType::CosmosPrevote
+                | SigningType::CosmosPrecommit
+                | SigningType::CosmosProposal
         )
+    }
+
+    /// Get the chain type for this signing type
+    pub fn chain_type(&self) -> ChainType {
+        match self {
+            SigningType::BlockProposal
+            | SigningType::Attestation
+            | SigningType::AggregateAndProof
+            | SigningType::AggregationSlot
+            | SigningType::RandaoReveal
+            | SigningType::VoluntaryExit
+            | SigningType::SyncCommitteeMessage
+            | SigningType::SyncCommitteeSelectionProof
+            | SigningType::SyncCommitteeContributionAndProof
+            | SigningType::ValidatorRegistration => ChainType::Ethereum,
+
+            SigningType::CosmosPrevote
+            | SigningType::CosmosPrecommit
+            | SigningType::CosmosProposal => ChainType::Cosmos,
+        }
     }
 
     /// Get the string name for this signing type (for metrics)
@@ -117,6 +174,9 @@ impl SigningType {
             SigningType::SyncCommitteeSelectionProof => "sync_committee_selection_proof",
             SigningType::SyncCommitteeContributionAndProof => "sync_committee_contribution_and_proof",
             SigningType::ValidatorRegistration => "validator_registration",
+            SigningType::CosmosPrevote => "cosmos_prevote",
+            SigningType::CosmosPrecommit => "cosmos_precommit",
+            SigningType::CosmosProposal => "cosmos_proposal",
         }
     }
 }

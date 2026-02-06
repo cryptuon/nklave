@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nklave.fullname" . }}-headless
+  labels:
+    {{- include "nklave.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: {{ .Values.service.metricsPort }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+    {{- if .Values.replication.enabled }}
+    - port: 26660
+      targetPort: replication
+      protocol: TCP
+      name: replication
+    {{- end }}
+  selector:
+    {{- include "nklave.selectorLabels" . | nindent 4 }}
