@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 use metrics_exporter_prometheus::PrometheusBuilder;
-use nklave_api::{create_router, create_router_with_auth, AppState, AuthConfig as ApiAuthConfig, AuthMode, FullApiConfig};
+use nklave_api::{create_router_with_ui, create_router_with_ui_and_auth, ApiConfig, AppState, AuthConfig as ApiAuthConfig, AuthMode, FullApiConfig};
 use nklave_core::{load_keystores_from_dir, metrics as core_metrics, SigningService};
 use nklave_storage::{
     Checkpoint, CheckpointProvider, CheckpointScheduler, CheckpointSchedulerHandle,
@@ -208,12 +208,12 @@ async fn main() -> Result<()> {
         };
 
         if let Some(api_auth) = api_auth_config {
-            create_router_with_auth(state.clone(), FullApiConfig {
+            create_router_with_ui_and_auth(state.clone(), FullApiConfig {
                 auth: Some(api_auth),
                 ..FullApiConfig::default()
             })
         } else {
-            create_router(state.clone())
+            create_router_with_ui(state.clone(), ApiConfig::default())
         }
     } else {
         // Check for environment variable token
@@ -223,13 +223,13 @@ async fn main() -> Result<()> {
 
         if !env_tokens.is_empty() {
             tracing::info!(token_count = env_tokens.len(), "Bearer token authentication enabled via environment");
-            create_router_with_auth(state.clone(), FullApiConfig {
+            create_router_with_ui_and_auth(state.clone(), FullApiConfig {
                 auth: Some(ApiAuthConfig::with_bearer_tokens(env_tokens)),
                 ..FullApiConfig::default()
             })
         } else {
             tracing::warn!("No authentication configured - API endpoints are unprotected");
-            create_router(state.clone())
+            create_router_with_ui(state.clone(), ApiConfig::default())
         }
     };
 

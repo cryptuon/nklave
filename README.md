@@ -1,69 +1,133 @@
-# Nklave
+[![CI](https://github.com/cryptuon/nklave/actions/workflows/ci.yml/badge.svg)](https://github.com/cryptuon/nklave/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Docs](https://img.shields.io/badge/docs-cryptuon.com-blue)](https://docs.cryptuon.com/nklave)
+[![Crates.io](https://img.shields.io/crates/v/nklave-core.svg)](https://crates.io/crates/nklave-core)
 
-Nklave is a signing security layer for proof-of-stake validators across multiple blockchain networks. It sits between a validator client and its signing keys, enforcing slashing-prevention rules inside a small, isolated signing component. The goal is simple: make slashable signing impossible by construction, even if the host or validator process is compromised.
+# nklave
 
-**Supported chains**: Ethereum (primary), Cosmos/CometBFT, Polkadot, Tezos. See `docs/slashing-definitions.md` for chain-specific slashing conditions.
+**Policy-enforcing trust boundary for PoS validators.**
 
-This repository contains product, architecture, and operational documentation. It is intentionally independent of any prior notes or drafts.
+Nklave is a signing security layer that makes slashable signing impossible by construction. It sits between validator clients and signing keys, enforcing slashing-prevention rules before any signature is produced.
 
-## What Nklave does
+```
+┌─────────────────┐         ┌─────────────────────────────────┐         ┌─────────────────┐
+│ Validator Client│         │            Nklave               │         │  Signing Keys   │
+│                 │  Sign   │  ┌───────────────────────────┐  │         │                 │
+│  - Lighthouse   │ ──────▶ │  │     Policy Engine         │  │ ──────▶ │  - BLS (ETH2)   │
+│  - Teku         │         │  │  ┌─────────────────────┐  │  │         │  - Ed25519      │
+│  - Prysm        │ ◀────── │  │  │ Slashing Protection │  │  │ ◀────── │    (Cosmos)     │
+│  - Lodestar     │  Sig/   │  │  └─────────────────────┘  │  │  Sign   │                 │
+│                 │  Refuse │  └───────────────────────────┘  │         │                 │
+└─────────────────┘         └─────────────────────────────────┘         └─────────────────┘
+                                         │
+                                         ▼
+                            ┌───────────────────────┐
+                            │   Append-Only Log     │
+                            │   + Checkpoints       │
+                            └───────────────────────┘
+```
 
-- Holds validator keys inside an isolated signing component.
-- Accepts sign requests via a narrow API compatible with common validator clients.
-- Verifies each request against slashing-prevention rules before signing.
-- Emits deterministic refusal codes and audit trails for every decision.
-- Preserves compatibility with existing custody, MPC, DVT, and uptime tooling.
+## Quick Start
 
-## What Nklave does not do (v1)
+### Docker
 
-- It does not replace validator clients.
-- It does not replace custody/MPC systems.
-- It does not guarantee physical attack resistance.
-- It does not claim side-channel immunity.
-- It does not provide global anti-slash across multiple independent enclaves without explicit coordination.
+```bash
+docker run -p 9000:9000 ghcr.io/cryptuon/nklave
+```
 
-## Why this is different
+### From Source
 
-Most stacks focus on who can sign. Nklave focuses on what should never be signed. It adds a policy-enforcing trust boundary that makes slashable signing logically impossible, not just operationally unlikely.
+```bash
+cargo install nklave-server
+nklave --keys-dir ./keys --data-dir ./data
+```
 
-## High-level architecture
+### With Docker Compose
 
-1. **Signing Enclave**
-   - Owns validator keys.
-   - Enforces slashing-prevention invariants.
-   - Maintains minimal safety state.
+```bash
+git clone https://github.com/cryptuon/nklave
+cd nklave
+docker compose -f docker/docker-compose.yml up
+```
 
-2. **Host Proxy (Signer Interface)**
-   - Runs next to the validator client.
-   - Exposes a standard remote-signer interface.
-   - Translates requests to the enclave protocol.
+## Features
 
-3. **State Integrity Layer**
-   - Prevents rollback of signing state.
-   - Uses append-only logs with cryptographic chaining.
-   - Supports optional hardware binding later.
+- **Web3Signer Compatible** - Drop-in replacement for existing validator setups
+- **Slashing Protection** - Enforces EIP-3076 and custom rules at the signing layer
+- **Multi-Chain** - Ethereum (BLS), Cosmos/CometBFT (Ed25519), extensible to others
+- **Audit Trail** - Append-only decision logs with cryptographic chaining
+- **State Integrity** - Rollback-resistant checkpoints prevent state manipulation
+- **Embedded UI** - Vue.js dashboard for monitoring and operations
+- **High Availability** - Primary/passive replication with automatic failover
 
-4. **Audit and Metrics**
-   - Decision logs with reason codes.
-   - Metrics for latency, refusal rates, and health.
+## Crates
+
+| Crate | Description |
+|-------|-------------|
+| [`nklave-core`](crates/nklave-core) | Core signing logic, BLS/Ed25519 keys, slashing protection rules |
+| [`nklave-api`](crates/nklave-api) | Web3Signer-compatible HTTP API with embedded UI |
+| [`nklave-storage`](crates/nklave-storage) | Append-only logs, checkpoints, EIP-3076 interchange |
+| [`nklave-server`](crates/nklave-server) | Main server binary with TLS, metrics, configuration |
+| [`nklave-cosmos`](crates/nklave-cosmos) | Cosmos/CometBFT remote signer protocol |
+| [`nklave-cli`](crates/nklave-cli) | CLI tools for key management and operations |
+
+## API Endpoints
+
+```bash
+# Health checks
+GET  /livez                          # Liveness probe
+GET  /readyz                         # Readiness probe
+GET  /health                         # Detailed health status
+
+# Web3Signer API
+GET  /api/v1/eth2/publicKeys         # List validator public keys
+POST /api/v1/eth2/sign/:pubkey       # Sign a message
+
+# Admin
+POST /reload                         # Reload keys from disk
+GET  /status                         # Server status
+POST /admin/checkpoint               # Force checkpoint
+```
+
+## Configuration
+
+Environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NKLAVE_LISTEN_ADDR` | `127.0.0.1:9000` | Server listen address |
+| `NKLAVE_KEYS_DIR` | `./keys` | Validator keystores directory |
+| `NKLAVE_DATA_DIR` | `./data` | State and logs directory |
+| `NKLAVE_KEYSTORE_PASSWORD` | - | Password for encrypted keystores |
+| `NKLAVE_API_TOKENS` | - | Comma-separated bearer tokens |
+| `NKLAVE_METRICS_ADDR` | - | Prometheus metrics endpoint |
+| `RUST_LOG` | `nklave=info` | Log level |
 
 ## Documentation
 
-- Product overview: `docs/product-overview.md`
-- Architecture: `docs/architecture.md`
-- Threat model: `docs/threat-model.md`
-- Signing protocol: `docs/protocol.md`
-- Slashing definitions: `docs/slashing-definitions.md`
-- Slashing policy: `docs/slashing-policy.md`
-- State integrity: `docs/state-integrity.md`
-- Deployment guide: `docs/deployment.md`
-- Operations and audit: `docs/operations.md`
-- Roadmap: `docs/roadmap.md`
+Full documentation at [docs.cryptuon.com/nklave](https://docs.cryptuon.com/nklave):
 
-## Status
+- [Architecture](https://docs.cryptuon.com/nklave/architecture)
+- [Deployment Guide](https://docs.cryptuon.com/nklave/deployment)
+- [Threat Model](https://docs.cryptuon.com/nklave/threat-model)
+- [Slashing Policy](https://docs.cryptuon.com/nklave/slashing-policy)
+- [API Reference](https://docs.cryptuon.com/nklave/api)
 
-This repository is documentation-first. Implementation details are captured in the docs and are intended to guide engineering milestones and customer-facing guarantees.
+## Contributing
 
-## Contact
+Contributions are welcome. Please open an issue to discuss significant changes before submitting a PR.
 
-Open an issue or start a discussion to propose changes to the architecture or roadmap.
+```bash
+# Run tests
+cargo test --all
+
+# Run with coverage
+cargo llvm-cov --all-features
+
+# Run benchmarks
+cargo bench -p nklave-core
+```
+
+## License
+
+MIT License - [Cryptuon](https://cryptuon.com) / [Dipankar Sarkar](mailto:me@dipankar.name)

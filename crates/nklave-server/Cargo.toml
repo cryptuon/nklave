@@ -3,7 +3,14 @@ name = "nklave-server"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Main server binary for Nklave signing security layer"
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+description = "Main server binary for Nklave with TLS, metrics, and configuration"
 
 [[bin]]
 name = "nklave"

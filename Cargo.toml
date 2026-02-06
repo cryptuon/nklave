@@ -12,9 +12,13 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/nklave/nklave"
-authors = ["Nklave Team"]
+license = "MIT"
+repository = "https://github.com/cryptuon/nklave"
+homepage = "https://docs.cryptuon.com/nklave"
+documentation = "https://docs.cryptuon.com/nklave"
+authors = ["Dipankar Sarkar <me@dipankar.name>"]
+keywords = ["ethereum", "validator", "signing", "slashing-protection", "web3signer"]
+categories = ["cryptography", "authentication"]
 
 [workspace.dependencies]
 # Internal crates

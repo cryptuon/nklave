@@ -4,8 +4,13 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
 authors.workspace = true
-description = "Command-line interface for Nklave operations"
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+description = "Command-line tools for Nklave key management and operations"
 
 [[bin]]
 name = "nklave"

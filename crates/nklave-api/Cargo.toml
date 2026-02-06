@@ -3,7 +3,14 @@ name = "nklave-api"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Web3Signer-compatible HTTP API for Nklave"
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+description = "Web3Signer-compatible HTTP API with embedded UI for Nklave"
 
 [dependencies]
 nklave-core = { workspace = true }

@@ -3,7 +3,14 @@ name = "nklave-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Core signing logic and slashing protection rules for Nklave"
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+description = "Core signing logic, BLS/Ed25519 keys, and slashing protection rules for Nklave"
 
 [features]
 default = []

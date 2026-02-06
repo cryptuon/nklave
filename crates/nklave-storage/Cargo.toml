@@ -3,7 +3,14 @@ name = "nklave-storage"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Persistence layer for Nklave (append-only logs, checkpoints, EIP-3076)"
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+description = "Persistence layer for Nklave: append-only decision logs, checkpoints, and EIP-3076 interchange"
 
 [dependencies]
 nklave-core = { workspace = true }
