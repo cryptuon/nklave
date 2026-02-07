@@ -5,19 +5,24 @@
 set -e
 
 DRY_RUN=""
+ALLOW_DIRTY="--allow-dirty"
 if [ "$1" == "--dry-run" ]; then
     DRY_RUN="--dry-run"
     echo "=== DRY RUN MODE ==="
 fi
 
 # Delay between publishes (crates.io rate limiting)
-DELAY_SECONDS=30
+DELAY_SECONDS=45
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Project root
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Crates in dependency order
 CRATES=(
@@ -29,11 +34,29 @@ CRATES=(
     "nklave-server"    # Depends on: core, api, storage
 )
 
+build_ui() {
+    echo -e "${BLUE}Building UI...${NC}"
+    cd "$PROJECT_ROOT/ui"
+
+    if command -v pnpm &> /dev/null; then
+        pnpm install && pnpm build
+    else
+        npm install && npm run build
+    fi
+
+    echo -e "${BLUE}Copying UI to nklave-api crate...${NC}"
+    rm -rf "$PROJECT_ROOT/crates/nklave-api/ui-dist"
+    cp -r "$PROJECT_ROOT/ui/dist" "$PROJECT_ROOT/crates/nklave-api/ui-dist"
+
+    cd "$PROJECT_ROOT"
+    echo -e "${GREEN}UI built and copied successfully${NC}"
+}
+
 publish_crate() {
     local crate=$1
     echo -e "${YELLOW}Publishing $crate...${NC}"
 
-    if cargo publish -p "$crate" $DRY_RUN; then
+    if cargo publish -p "$crate" $ALLOW_DIRTY $DRY_RUN; then
         echo -e "${GREEN}Successfully published $crate${NC}"
         return 0
     else
@@ -68,6 +91,10 @@ echo "Publishing order:"
 for i in "${!CRATES[@]}"; do
     echo "  $((i+1)). ${CRATES[$i]}"
 done
+echo ""
+
+# Build UI first
+build_ui
 echo ""
 
 # Confirm before publishing

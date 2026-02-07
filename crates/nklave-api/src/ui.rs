@@ -13,7 +13,7 @@ use rust_embed::RustEmbed;
 /// Embedded UI assets from the Vue.js build output.
 /// The folder path is relative to this crate's Cargo.toml location.
 #[derive(RustEmbed)]
-#[folder = "../../ui/dist"]
+#[folder = "ui-dist"]
 pub struct UiAssets;
 
 /// Serve a UI asset by path, falling back to index.html for SPA routing.
