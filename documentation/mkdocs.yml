@@ -1,5 +1,5 @@
 site_name: nklave
-site_url: https://nklave.docs.cryptuon.com/
+site_url: https://docs.cryptuon.com/nklave/
 site_description: Policy-enforcing trust boundary for PoS validators. Slashable signing impossible by construction.
 site_author: Cryptuon
 repo_url: https://github.com/cryptuon/nklave
