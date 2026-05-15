@@ -170,3 +170,7 @@ target/
 *.pyo
 *.pyd
 .Python
+
+# mkdocs (documentation/)
+documentation/site/
+documentation/.venv/
