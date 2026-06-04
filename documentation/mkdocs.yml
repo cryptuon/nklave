@@ -1,0 +1,77 @@
+site_name: nklave
+site_url: https://docs.cryptuon.com/nklave/
+site_description: Policy-enforcing trust boundary for PoS validators. Slashable signing impossible by construction.
+site_author: Cryptuon
+repo_url: https://github.com/cryptuon/nklave
+repo_name: cryptuon/nklave
+edit_uri: edit/main/documentation/
+
+docs_dir: .
+site_dir: ../_site
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Concepts:
+      - Slashing protection: topics/slashing-protection.md
+      - Policy engine: topics/policy-engine.md
+      - Append-only log: topics/append-only-log.md
+  - Operations:
+      - Deployment: topics/deployment.md
+      - Monitoring: topics/monitoring.md
+  - Reference:
+      - Configuration: reference-config.md
+      - CLI: reference-cli.md
