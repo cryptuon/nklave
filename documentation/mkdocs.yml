@@ -1,7 +1,8 @@
 site_name: nklave
 site_url: https://docs.cryptuon.com/nklave/
 site_description: Policy-enforcing trust boundary for PoS validators. Slashable signing impossible by construction.
-site_author: Cryptuon
+site_author: Cryptuon Research
+copyright: "© 2026 Cryptuon Research"
 repo_url: https://github.com/cryptuon/nklave
 repo_name: cryptuon/nklave
 edit_uri: edit/main/documentation/docs/
@@ -38,6 +39,14 @@ theme:
     - toc.follow
   icon:
     repo: fontawesome/brands/github
+
+extra:
+  homepage: https://nklave.cryptuon.com/
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/cryptuon/nklave
+    - icon: fontawesome/solid/globe
+      link: https://www.cryptuon.com
 
 markdown_extensions:
   - admonition

@@ -5,6 +5,8 @@
 
 # nklave
 
+**[🌐 Site](https://nklave.cryptuon.com/) · [📚 Docs](https://docs.cryptuon.com/nklave/) · [📦 crates.io package](https://crates.io/crates/nklave-core) · [🔬 Cryptuon Research](https://github.com/cryptuon)**
+
 **Policy-enforcing trust boundary for PoS validators.**
 
 Nklave is a signing security layer that makes slashable signing impossible by construction. It sits between validator clients and signing keys, enforcing slashing-prevention rules before any signature is produced.
@@ -130,4 +132,14 @@ cargo bench -p nklave-core
 
 ## License
 
-MIT License - [Cryptuon](https://cryptuon.com) / [Dipankar Sarkar](mailto:me@dipankar.name)
+MIT License - [Cryptuon Research](https://www.cryptuon.com) · [contact@cryptuon.com](mailto:contact@cryptuon.com)
+
+---
+
+## Part of Cryptuon Research
+
+`nklave` is one of [20 open-source blockchain-infrastructure projects](https://www.cryptuon.com/projects) from **[Cryptuon Research](https://www.cryptuon.com)** — blockchain theory, shipped as protocols.
+
+**Related projects:** [Tesseract](https://tesseract.cryptuon.com/) · [Switchboard](https://switchboard.cryptuon.com/) · [StreamSync](https://streamsync.cryptuon.com/)
+
+Docs: [docs.cryptuon.com/nklave](https://docs.cryptuon.com/nklave/) · Contact: [contact@cryptuon.com](mailto:contact@cryptuon.com)

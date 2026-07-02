@@ -14,9 +14,9 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/cryptuon/nklave"
-homepage = "https://docs.cryptuon.com/nklave"
+homepage = "https://nklave.cryptuon.com/"
 documentation = "https://docs.cryptuon.com/nklave"
-authors = ["Dipankar Sarkar <me@dipankar.name>"]
+authors = ["Cryptuon Research <contact@cryptuon.com>"]
 keywords = ["ethereum", "validator", "signing", "slashing-protection", "web3signer"]
 categories = ["cryptography", "authentication"]
 
