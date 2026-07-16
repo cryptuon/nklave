@@ -7,9 +7,19 @@
 
 **[🌐 Site](https://nklave.cryptuon.com/) · [📚 Docs](https://docs.cryptuon.com/nklave/) · [📦 crates.io package](https://crates.io/crates/nklave-core) · [🔬 Cryptuon Research](https://github.com/cryptuon)**
 
-**Policy-enforcing trust boundary for PoS validators.**
+**Policy-enforcing trust boundary for PoS validators — the slashing firewall in front of your signing keys.**
 
-Nklave is a signing security layer that makes slashable signing impossible by construction. It sits between validator clients and signing keys, enforcing slashing-prevention rules before any signature is produced.
+Nklave is a signing security layer that makes slashable signing impossible by construction. It sits between validator clients and signing keys, enforcing EIP-3076 slashing-prevention rules and configurable policies before any signature is produced — so a compromised or buggy validator client cannot produce a slashable signature, even when the host is fully compromised.
+
+## Why this matters in 2026: restaking multiplies your slashing surface
+
+For most of proof-of-stake's history, a validator key faced exactly one slashing surface: the consensus layer of the chain it validated. Restaking changed that. As **EigenLayer-style restaking and Actively Validated Services (AVS)** go mainstream, the *same* staked capital and — increasingly — the *same* keys are opted into multiple independent slashing regimes at once. Each AVS defines its own slashing conditions. Each one is a new way to lose stake, governed by code you did not write.
+
+That shift makes the boundary between "what asked for a signature" and "what actually gets signed" the single most valuable control point a staking operation has. A policy firewall that sits in front of the signing keys — refusing anything that violates a rule *before* the key is touched, and logging every decision — stops being a nice-to-have and becomes critical infrastructure.
+
+nklave is that firewall. Today it enforces the consensus-layer slashing rules that account for the overwhelming majority of real-world slashing incidents (double proposals, double votes, surround votes on Ethereum; height/round double-signing on CometBFT), with EIP-3076 interchange import/export for migration. Its policy layer evaluates every request to an explicit allow-or-refuse decision *before* the key is reached — exactly the shape you need as restaking pushes more, and more heterogeneous, signing constraints down onto the same keys.
+
+> **Honest scope:** nklave enforces *protocol-level* slashing prevention (EIP-3076 and equivalents). AVS-specific slashing conditions are defined per-service and are not built in — but the policy engine is designed so operators can express additional guardrails as first-class policies. See [ROADMAP.md](ROADMAP.md) for where restaking-aware policy work is headed.
 
 ```
 ┌─────────────────┐         ┌─────────────────────────────────┐         ┌─────────────────┐
@@ -54,8 +64,10 @@ docker compose -f docker/docker-compose.yml up
 
 ## Features
 
+- **Enforce before the key is touched** - The policy chain evaluates every request first; a refused request never reaches the keystore or HSM. Slashable signing is impossible by construction, even if the host is compromised.
 - **Web3Signer Compatible** - Drop-in replacement for existing validator setups
 - **Slashing Protection** - Enforces EIP-3076 and custom rules at the signing layer
+- **First-class policy engine** - Slashing rules live in a dedicated policy module (`nklave-core::policy`) that returns an explicit `Allow`/`Refuse(code)` decision per request — a real enforcement layer, not a config afterthought, and the extension point that matters as restaking pushes more signing constraints onto the same keys
 - **Multi-Chain** - Ethereum (BLS), Cosmos/CometBFT (Ed25519), extensible to others
 - **Audit Trail** - Append-only decision logs with cryptographic chaining
 - **State Integrity** - Rollback-resistant checkpoints prevent state manipulation
@@ -114,6 +126,8 @@ Full documentation at [docs.cryptuon.com/nklave](https://docs.cryptuon.com/nklav
 - [Threat Model](https://docs.cryptuon.com/nklave/threat-model)
 - [Slashing Policy](https://docs.cryptuon.com/nklave/slashing-policy)
 - [API Reference](https://docs.cryptuon.com/nklave/api)
+
+See [ROADMAP.md](ROADMAP.md) for the project vision, milestones, and the cheapest path to a production deployment.
 
 ## Contributing
 
